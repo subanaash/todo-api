@@ -68,6 +68,26 @@ Interactive API docs are available at `http://127.0.0.1:8000/docs` (built in aut
 <img width="597" height="785" alt="Screenshot 2026-08-04 181437" src="https://github.com/user-attachments/assets/2895b0cf-c323-4fab-9ab2-193fd98a6c54" />
 
 
+## Database (Week 3)
+
+### Why SQLite
+SQLite was chosen because it requires no separate database server — it's a single file (`tasks.db`) that gets created automatically the first time the app runs. This makes it ideal for a small project like this: no setup, no configuration, and easy to inspect directly with a tool like DB Browser for SQLite.
+
+### Where the database lives
+The database file is created at the project root: `todo-api/tasks.db`. It's excluded from version control via `.gitignore` — it's local to whoever runs the project and gets recreated automatically on first run.
+
+### Example SQL query
+Opened `tasks.db` in DB Browser for SQLite and ran:
+```sql
+SELECT * FROM task;
+```
+This returned every task currently stored in the database, confirming the API and the database stay in sync — any change made through the API (or directly in the database) is immediately reflected in the other.
+
+### Database viewer screenshot
+<img width="318" height="522" alt="image" src="https://github.com/user-attachments/assets/ca93e5d1-b00e-4101-93aa-87f927105cbc" />
+
+
+
 ## Notes
 
 Data is stored in memory only. Restarting the server resets tasks back to the original 3 seed items. This is intentional for this stage of the project; persistence will be added in a later assignment.
@@ -88,3 +108,7 @@ Data is stored in memory only. Restarting the server resets tasks back to the or
 - I didn't mention the root / endpoint at all, which is why the AI skipped it entirely , a case of the AI doing exactly what I asked, not what I actually needed.
 
 **One rematch:** Adding a line specifying "Include a GET / endpoint that returns API name, version, and list of endpoints" and "Return errors as a simple {\"detail\": \"<message>\"} JSON object, not a Pydantic validation error" would fix both gaps found above.
+
+
+
+
