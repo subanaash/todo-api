@@ -1,97 +1,119 @@
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, field_validator
+from fastapi import FastAPI, HTTPException
+from sqlmodel import SQLModel, Field, create_engine, Session, select
 from typing import Optional
 
-app = FastAPI(title="To-Do List API")
+app = FastAPI()
+
+# Database setup 
+DATABASE_URL = "sqlite:///tasks.db"
+engine = create_engine(DATABASE_URL, echo=False)
 
 
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    # Convert Pydantic's default 422 into 400, as required by the API spec
-    errors = [
-        {"loc": e["loc"], "msg": e["msg"], "type": e["type"]}
-        for e in exc.errors()
-    ]
-    return JSONResponse(status_code=400, content={"detail": errors})
-
-# In-memory storage
-tasks: list[dict] = []
-next_id = 1
-
-
-class TaskCreate(BaseModel):
-    title: str
-
-    @field_validator("title")
-    @classmethod
-    def title_not_empty(cls, v: str) -> str:
-        if not v or not v.strip():
-            raise ValueError("title must not be empty")
-        return v
-
-
-class TaskUpdate(BaseModel):
-    title: Optional[str] = None
-    done: Optional[bool] = None
-
-    @field_validator("title")
-    @classmethod
-    def title_not_empty(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None and not v.strip():
-            raise ValueError("title must not be empty")
-        return v
-
-
-class Task(BaseModel):
-    id: int
+class Task(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
     title: str
     done: bool = False
 
 
-def find_task(task_id: int) -> Optional[dict]:
-    return next((t for t in tasks if t["id"] == task_id), None)
+def create_db_and_seed():
+    SQLModel.metadata.create_all(engine)
+    with Session(engine) as session:
+        existing = session.exec(select(Task)).first()
+        if not existing:
+            session.add(Task(title="Buy milk", done=False))
+            session.add(Task(title="Walk the dog", done=False))
+            session.add(Task(title="Finish assignment", done=True))
+            session.commit()
 
 
-@app.get("/tasks", response_model=list[Task], status_code=200)
-def list_tasks():
-    return tasks
+@app.on_event("startup")
+def on_startup():
+    create_db_and_seed()
 
 
-@app.get("/tasks/{task_id}", response_model=Task, status_code=200)
+#Request body models 
+class TaskCreate(SQLModel):
+    title: Optional[str] = None
+
+
+class TaskUpdate(SQLModel):
+    title: Optional[str] = None
+    done: Optional[bool] = None
+
+
+#Root and health
+@app.get("/")
+def root():
+    return {
+        "name": "Task API",
+        "version": "2.0",
+        "endpoints": ["/tasks"]
+    }
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+#Read 
+@app.get("/tasks")
+def get_tasks():
+    with Session(engine) as session:
+        tasks = session.exec(select(Task)).all()
+        return tasks
+
+
+@app.get("/tasks/{task_id}")
 def get_task(task_id: int):
-    task = find_task(task_id)
-    if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
-    return task
+    with Session(engine) as session:
+        task = session.get(Task, task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+        return task
 
 
-@app.post("/tasks", response_model=Task, status_code=201)
-def create_task(payload: TaskCreate):
-    global next_id
-    task = {"id": next_id, "title": payload.title.strip(), "done": False}
-    tasks.append(task)
-    next_id += 1
-    return task
+# Create
+@app.post("/tasks", status_code=201)
+def create_task(task: TaskCreate):
+    if not task.title or not task.title.strip():
+        raise HTTPException(status_code=400, detail="Title is required")
+
+    with Session(engine) as session:
+        new_task = Task(title=task.title, done=False)
+        session.add(new_task)
+        session.commit()
+        session.refresh(new_task)
+        return new_task
 
 
-@app.put("/tasks/{task_id}", response_model=Task, status_code=200)
-def update_task(task_id: int, payload: TaskUpdate):
-    task = find_task(task_id)
-    if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
-    if payload.title is not None:
-        task["title"] = payload.title.strip()
-    if payload.done is not None:
-        task["done"] = payload.done
-    return task
+# Update & Delete 
+@app.put("/tasks/{task_id}")
+def update_task(task_id: int, update: TaskUpdate):
+    with Session(engine) as session:
+        task = session.get(Task, task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+        if update.title is not None:
+            if not update.title.strip():
+                raise HTTPException(status_code=400, detail="Title cannot be empty")
+            task.title = update.title
+        if update.done is not None:
+            task.done = update.done
+
+        session.add(task)
+        session.commit()
+        session.refresh(task)
+        return task
 
 
 @app.delete("/tasks/{task_id}", status_code=204)
 def delete_task(task_id: int):
-    task = find_task(task_id)
-    if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
-    tasks.remove(task)
-    return None
+    with Session(engine) as session:
+        task = session.get(Task, task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+        session.delete(task)
+        session.commit()
+        return
