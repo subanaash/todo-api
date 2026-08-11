@@ -110,5 +110,51 @@ Data is stored in memory only. Restarting the server resets tasks back to the or
 **One rematch:** Adding a line specifying "Include a GET / endpoint that returns API name, version, and list of endpoints" and "Return errors as a simple {\"detail\": \"<message>\"} JSON object, not a Pydantic validation error" would fix both gaps found above.
 
 
+## Postgres + Docker (Week 4)
+
+### What changed
+The app moved from SQLite to Postgres, running in Docker with a persistent volume. The service and route code did not change at all — only the database connection (now read from `.env`) and the underlying engine changed. This proves the storage layer is properly decoupled from the API layer.
+
+### How to run it
+1. Copy `.env.example` to `.env` and fill in your own values (or use the defaults for local dev):
+   ```
+   cp .env.example .env
+   ```
+
+2. Start everything (Postgres + the app) with one command:
+   ```
+   docker compose up
+   ```
+
+3. Open your browser to `http://localhost:8000`
+
+The first time this runs, Postgres creates its data volume and the app automatically creates the `task` table and seeds it with 3 example tasks.
+
+### Environment variables
+`.env` (gitignored) holds the real connection details. `.env.example` (committed) shows the expected shape without real secrets:
+```
+POSTGRES_PASSWORD=yourpassword
+POSTGRES_DB=yourdbname
+DATABASE_URL=postgresql://postgres:yourpassword@localhost:5432/yourdbname
+```
+
+### Proving persistence
+1. Created a new task via POST /tasks (`"Persistence test"`, id 4).
+2. Ran `docker compose down` — this fully stops and removes both the app and database containers.
+3. Ran `docker compose up` again — both containers rebuilt from scratch.
+4. Called `GET /tasks` — the "Persistence test" task (id 4) was still present, confirming data survived a complete container restart thanks to the named Docker volume (`todo-pgdata`).
+
+**docker ps output:**
+<img width="1050" height="252" alt="Screenshot 2026-08-11 165848" src="https://github.com/user-attachments/assets/9420ef6b-bd32-4bd4-a25a-98b1483499f6" />
+
+**Persistence proof — GET /tasks:**
+<img width="257" height="341" alt="Screenshot 2026-08-11 165913" src="https://github.com/user-attachments/assets/77daee6c-1610-4577-8012-e072f0e01c6e" />
+
+
+
+### Architecture note
+Swapping SQLite for Postgres only required changing where the database engine gets its connection string — the `Task` model, all route handlers, and all business logic in `main.py` stayed identical. This is the layering the assignment is built to prove: the API describes *what* the app does, the database describes *where* it stores data, and those two concerns don't need to know about each other.
+
+
 
 
