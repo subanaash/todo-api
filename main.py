@@ -1,11 +1,15 @@
+import os
 from fastapi import FastAPI, HTTPException
 from sqlmodel import SQLModel, Field, create_engine, Session, select
 from typing import Optional
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = FastAPI()
 
-# ---- Stage 0: Database setup ----
-DATABASE_URL = "sqlite:///tasks.db"
+#  Database setup 
+DATABASE_URL = os.getenv("DATABASE_URL")
 engine = create_engine(DATABASE_URL, echo=False)
 
 
@@ -31,7 +35,7 @@ def on_startup():
     create_db_and_seed()
 
 
-# ---- Request body models ----
+#  Request body models 
 class TaskCreate(SQLModel):
     title: Optional[str] = None
 
@@ -41,12 +45,12 @@ class TaskUpdate(SQLModel):
     done: Optional[bool] = None
 
 
-# ---- Root and health ----
+# Root and health 
 @app.get("/")
 def root():
     return {
         "name": "Task API",
-        "version": "2.0",
+        "version": "3.0",
         "endpoints": ["/tasks"]
     }
 
@@ -56,7 +60,7 @@ def health():
     return {"status": "ok"}
 
 
-# ---- Stage 1: Read ----
+# Read 
 @app.get("/tasks")
 def get_tasks():
     with Session(engine) as session:
@@ -73,7 +77,7 @@ def get_task(task_id: int):
         return task
 
 
-# ---- Stage 2: Create ----
+# Create 
 @app.post("/tasks", status_code=201)
 def create_task(task: TaskCreate):
     if not task.title or not task.title.strip():
@@ -87,7 +91,7 @@ def create_task(task: TaskCreate):
         return new_task
 
 
-# ---- Stage 3: Update & Delete ----
+# Update & Delete
 @app.put("/tasks/{task_id}")
 def update_task(task_id: int, update: TaskUpdate):
     with Session(engine) as session:
